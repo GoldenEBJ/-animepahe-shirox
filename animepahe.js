@@ -1,261 +1,156 @@
 /*
- * AnimePahe module for ShiroX
- * Author: GoldenEBJ
- *
- * Initial implementation:
- * - Anime search
- * - Anime details
- * - Episode listings
- *
- * API compatibility and playback are not yet verified.
- */
 
-const BASE_URL = "https://animepahe.ch";
+* AnimePahe for ShiroX
+* Author: GoldenEBJ
+* Initial version: search, details, and episodes.
+* Playback resolution will be added after the source API is verified.
+    */
 
-const HEADERS = {
-    "User-Agent": "Mozilla/5.0",
-    "Referer": BASE_URL + "/"
+var AnimePahe = (function () {
+“use strict”;
+
+var BASE = "https://animepahe.ch";
+var HEADERS = {
+    "Accept": "application/json, text/html, */*",
+    "Referer": BASE + "/",
+    "User-Agent": "Mozilla/5.0"
+};
+function absolute(url) {
+    url = String(url || "").trim();
+    if (/^https?:\/\//i.test(url)) return url;
+    if (url.indexOf("//") === 0) return "https:" + url;
+    if (url.indexOf("/") === 0) return BASE + url;
+    return BASE + "/" + url;
+}
+async function request(url) {
+    if (typeof fetchv2 !== "function") {
+        throw new Error("ShiroX fetchv2 is unavailable.");
+    }
+    var response = await fetchv2(url, HEADERS, "GET", null);
+    if (!response) {
+        throw new Error("The source returned no response.");
+    }
+    if (typeof response.status === "number" &&
+        (response.status < 200 || response.status >= 300)) {
+        throw new Error("AnimePahe returned HTTP " + response.status);
+    }
+    return response;
+}
+async function text(url) {
+    var response = await request(url);
+    return await response.text();
+}
+async function json(url) {
+    return JSON.parse(await text(url));
+}
+function escapeHTML(value) {
+    return String(value || "").replace(/<[^>]*>/g, "")
+        .replace(/&amp;/g, "&")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .trim();
+}
+function animeSession(url) {
+    var match = String(url || "").match(/\/anime\/([^/?#]+)/i);
+    return match ? match[1] : "";
+}
+async function search(keyword) {
+    var query = String(keyword || "").trim();
+    if (!query) return JSON.stringify([]);
+    var endpoint = BASE + "/api?m=search&q=" +
+        encodeURIComponent(query);
+    var data = await json(endpoint);
+    var rows = Array.isArray(data.data) ? data.data : [];
+    var results = rows.map(function (item) {
+        return {
+            title: escapeHTML(item.title || "Unknown anime"),
+            image: absolute(item.poster || ""),
+            href: absolute("/anime/" + (item.session || ""))
+        };
+    }).filter(function (item) {
+        return item.href !== absolute("/anime/");
+    });
+    return JSON.stringify(results);
+}
+async function details(url) {
+    var html = await text(url);
+    function meta(property) {
+        var escaped = property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        var re = new RegExp(
+            '<meta[^>]+(?:property|name)=["\\']' + escaped +
+            '["\\'][^>]+content=["\\']([^"\\']*)["\\']',
+            "i"
+        );
+        var match = html.match(re);
+        return match ? escapeHTML(match[1]) : "";
+    }
+    return JSON.stringify([{
+        description: meta("og:description") || meta("description"),
+        aliases: meta("og:title"),
+        airdate: ""
+    }]);
+}
+async function episodes(url) {
+    var session = animeSession(url);
+    if (!session) {
+        throw new Error("Cannot identify the AnimePahe anime session.");
+    }
+    // Read the anime page to obtain the release API's numeric ID.
+    var html = await text(url);
+    var idMatch = html.match(/data-poster=["'](\d+)["']/i);
+    if (!idMatch) {
+        idMatch = html.match(/[?&]id=(\d+)/i);
+    }
+    if (!idMatch) {
+        throw new Error(
+            "Could not identify the release ID. " +
+            "AnimePahe's page format may have changed."
+        );
+    }
+    var id = idMatch[1];
+    var endpoint = BASE +
+        "/api?m=release&id=" + encodeURIComponent(id) +
+        "&sort=episode_asc&page=1";
+    var data = await json(endpoint);
+    var rows = Array.isArray(data.data) ? data.data : [];
+    var result = rows.map(function (item) {
+        return {
+            number: String(item.episode || item.number || ""),
+            href: absolute(
+                "/play/" + session + "/" +
+                (item.session || item.id || "")
+            )
+        };
+    }).filter(function (item) {
+        return item.number !== "";
+    });
+    return JSON.stringify(result);
+}
+return {
+    search: search,
+    details: details,
+    episodes: episodes
 };
 
-/**
- * Fetch text using ShiroX's fetchv2 bridge.
- */
-async function getText(url) {
-    const response = await fetchv2(url, HEADERS);
+})();
 
-    if (typeof response === "string") {
-        return response;
-    }
-
-    if (response && typeof response.text === "function") {
-        return await response.text();
-    }
-
-    if (response && typeof response.body === "string") {
-        return response.body;
-    }
-
-    if (response && typeof response._data === "string") {
-        return response._data;
-    }
-
-    throw new Error("Unable to read response from " + url);
+async function searchResults(keyword) {
+return await AnimePahe.search(keyword);
 }
 
-/**
- * Fetch and parse JSON.
- */
-async function getJSON(url) {
-    const response = await getText(url);
-    return JSON.parse(response);
+async function extractDetails(url) {
+return await AnimePahe.details(url);
 }
 
-/**
- * Convert relative URLs into absolute URLs.
- */
-function absoluteURL(url) {
-    if (!url) return "";
-
-    if (/^https?:\/\//i.test(url)) {
-        return url;
-    }
-
-    if (url.startsWith("//")) {
-        return "https:" + url;
-    }
-
-    if (url.startsWith("/")) {
-        return BASE_URL + url;
-    }
-
-    return BASE_URL + "/" + url;
+async function extractEpisodes(url) {
+return await AnimePahe.episodes(url);
 }
 
-/**
- * Search AnimePahe.
- *
- * Expected result:
- * [{ title, image, href }]
- */
-globalThis.searchResults = async function (keyword) {
-    try {
-        const url =
-            BASE_URL +
-            "/api?m=search&q=" +
-            encodeURIComponent(keyword);
-
-        const response = await getJSON(url);
-
-        const items = Array.isArray(response.data)
-            ? response.data
-            : [];
-
-        const results = items.map(function (item) {
-            return {
-                title: item.title || item.english || "Unknown anime",
-                image: absoluteURL(item.poster || item.image || ""),
-                href: absoluteURL(
-                    "/anime/" + (item.session || item.id || "")
-                )
-            };
-        }).filter(function (item) {
-            return item.href !== BASE_URL + "/anime/";
-        });
-
-        return JSON.stringify(results);
-    } catch (error) {
-        return JSON.stringify([]);
-    }
-};
-
-/**
- * Extract basic anime details.
- *
- * Expected result:
- * [{ description, aliases, airdate }]
- */
-globalThis.extractDetails = async function (url) {
-    try {
-        const html = await getText(url);
-
-        function getMeta(property) {
-            const escaped = property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-            const patterns = [
-                new RegExp(
-                    '<meta[^>]+property=["\\']' +
-                    escaped +
-                    '["\\'][^>]+content=["\\']([^"\\']*)',
-                    "i"
-                ),
-                new RegExp(
-                    '<meta[^>]+content=["\\']([^"\\']*)["\\'][^>]+property=["\\']' +
-                    escaped +
-                    '["\\']',
-                    "i"
-                )
-            ];
-
-            for (let i = 0; i < patterns.length; i++) {
-                const match = html.match(patterns[i]);
-                if (match) return match[1];
-            }
-
-            return "";
-        }
-
-        const description =
-            getMeta("og:description") ||
-            getMeta("description");
-
-        const aliases = getMeta("og:title");
-
-        return JSON.stringify([{
-            description: description,
-            aliases: aliases,
-            airdate: ""
-        }]);
-    } catch (error) {
-        return JSON.stringify([{
-            description: "",
-            aliases: "",
-            airdate: ""
-        }]);
-    }
-};
-
-/**
- * Extract episodes.
- *
- * Expected result:
- * [{ href, number }]
- *
- * AnimePahe commonly exposes episode information through
- * its release API. The exact response needs verification
- * against the selected domain.
- */
-globalThis.extractEpisodes = async function (url) {
-    try {
-        const match = url.match(/\/anime\/([^/?#]+)/i);
-
-        if (!match) {
-            return JSON.stringify([]);
-        }
-
-        const session = match[1];
-
-        const apiURL =
-            BASE_URL +
-            "/api?m=release&id=" +
-            encodeURIComponent(session) +
-            "&sort=episode_asc&page=1";
-
-        const response = await getJSON(apiURL);
-
-        const items = Array.isArray(response.data)
-            ? response.data
-            : [];
-
-        const episodes = items.map(function (item) {
-            return {
-                href: absoluteURL(
-                    "/play/" +
-                    session +
-                    "/" +
-                    (item.session || item.id || "")
-                ),
-                number: String(
-                    item.episode ||
-                    item.number ||
-                    ""
-                )
-            };
-        }).filter(function (item) {
-            return item.number !== "";
-        });
-
-        return JSON.stringify(episodes);
-    } catch (error) {
-        return JSON.stringify([]);
-    }
-};
-
-/**
- * Initial stream resolver.
- *
- * Only returns direct media URLs if they are present on
- * the episode page. Embed-page extraction and playback
- * support will be implemented after testing the source.
- */
-globalThis.extractStreamUrl = async function (url) {
-    try {
-        const html = await getText(url);
-
-        const streams = [];
-        const pattern =
-            /https?:\/\/[^"'\\\s<>]+?\.(?:m3u8|mp4)(?:\?[^"'\\\s<>]*)?/gi;
-
-        const matches = html.match(pattern) || [];
-
-        matches.forEach(function (streamURL) {
-            if (!streams.some(function (item) {
-                return item.streamUrl === streamURL;
-            })) {
-                streams.push({
-                    title: "AnimePahe stream",
-                    streamUrl: streamURL
-                });
-            }
-        });
-
-        return JSON.stringify({
-            streams: streams,
-            subtitles: []
-        });
-    } catch (error) {
-        return JSON.stringify({
-            streams: [],
-            subtitles: []
-        });
-    }
-};
+async function extractStreamUrl(url) {
+throw new Error(
+“AnimePahe playback has not been implemented yet. “ +
+“Search and episode support must be tested first.”
+);
+}
