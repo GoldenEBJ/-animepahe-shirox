@@ -1,1 +1,9 @@
-
+{
+“name”: “AnimePahe”,
+“version”: “1.0.0”,
+“language”: “en”,
+“baseURL”: “https://animepahe.ch”,
+“type”: “anime”,
+“icon”: “https://animepahe.ch/favicon.ico”,
+“file”: “animepahe.js”
+}
