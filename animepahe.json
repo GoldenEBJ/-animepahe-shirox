@@ -1,9 +1,21 @@
 {
-“name”: “AnimePahe”,
+“sourceName”: “AnimePahe”,
+“iconUrl”: “https://animepahe.ch/favicon.ico”,
+“author”: {
+“name”: “GoldenEBJ”,
+“icon”: “https://github.com/GoldenEBJ.png”,
+“url”: “https://github.com/GoldenEBJ”
+},
+“description”: “AnimePahe source module for ShiroX.”,
 “version”: “1.0.0”,
-“language”: “en”,
-“baseURL”: “https://animepahe.ch”,
+“language”: “English”,
+“streamType”: “HLS/MP4”,
+“baseUrl”: “https://animepahe.ch/”,
+“searchBaseUrl”: “https://animepahe.ch/”,
+“scriptUrl”: “https://raw.githubusercontent.com/GoldenEBJ/-animepahe-shirox/main/animepahe.js”,
 “type”: “anime”,
-“icon”: “https://animepahe.ch/favicon.ico”,
-“file”: “animepahe.js”
+“downloadSupport”: true,
+“asyncJS”: true,
+“softsub”: true,
+“supportsShirox”: true
 }
